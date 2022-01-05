@@ -1,0 +1,321 @@
+---
+title: "AI van de fraude-ontdekking"
+subtitle: "Een simulatie studie"
+author: "Jan van Rongen"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+
+source("./lib/my_auc.R")
+set.seed(11111)
+
+require(xgboost)
+require(knitr)
+require(myLib)
+```
+# 0. Inleiding
+
+Door Argos is de in Rotterdam gebruikte "AI" om fraude-gevallen te signaleren gepubliceerd.
+
+Gegeven mijn ervaring met dit soort software leek het me goed de gevolgde methode onder de loep te nemen. Bijzonder daaraan is dat er een voorspellingsmodel wordtr gemaakt met historische data, waarin 60% van de gevallen als fraude zijn beoordeeld. Dat model wordt echter toegepast op de totale populatie van bijstand-trekkers waarvan (volgens andere berichten) maar een zeer beperkt aandeel - slechts enkele procenten - daadwerkelijk fraudeert. 
+
+De ervaring leert dat zulke modellen niet goed werken, omdat er veel te weinig gegevens van niet-fraudeurs worden "geleerd". Maar kan dat worden hard gemaakt?
+
+Ter illustratie produceer ik hierbij voorbeelden met behulp van een dataset van ongeveer een kwart miljoen objecten met 1100 kenmerken die diende om koopgedrag te voorspellen. Het dient dus een ander doel, maar de algoritmen zijn hetzelfde, 
+
+Dit is afkomstig van een oude Kaggle competitie (Homesite). De training data in die competitie was ongeveer een kwart miljoen records. De prevalentie van de "Ja"-klasse was 18%. Uit deze data isoleren we een nieuwe trainingsset en een "populatie" waarvan we in dit geval dus de klassificatie wel kennen. 
+
+
+# 1. De aanpak van de simulatie.  
+
+## 1.1 De Data
+
+Elk record in de data bevat een klassificatie (Ja/Nee) en 1110 eigenschappen van het öbject"(in dit geval een persoon) waarover dat record gaat. In het jargon noemt men de klassificatie "target" en de eigenschappen 
+"features". In het Nederlands hebben we het meestal over de doel-variabele en over de kenmerken. 
+
+
+Uit die grote data-set haal ik 13,500 öbjecten met een percentage "Jan" van 60% - de data waarmee het model straks wordt getrained. Vervolgens een data-set van 55,000 waarop we later het model "loslaten". Het percentage "Ja" daarin is 17%. 
+De eerste fase is het fatsoeneren van de input-data en het beoordelen welke kenmerken relevant zijn. De gekozen data was destijds al opgeschoond door ons, dus die stap kunnen we nu overslaan. Welke kenmerken bijdragen aan de voorspellingen heb ik na de eerste goede simulatie vastgesteld met een functie uit de software (`xgb.importance`) waarmee de 200 belangrijkste kenmerken zijn opgevraagd. 
+
+## 1.2. De software van de simulaties. 
+
+Net als de Rotterdamse software gebruiken we de statistische programmeertaal R. Ik ga echter niet uitgebreid het "beste" model selecteren, want dat is hier het doel niet. Mijn doel is om te laten zien dat zonder extra maatregelen een model dat is getrained op een 60/40 prevalentie niet goed werkt voor een 17/83 prevalentie in de populatie. Laten we dit fenomeen de __prevalentie-bias__ noemen. 
+
+In Rotterdam zijn 5 soorten modellen geprobeerd, die elk hun eigen pakket hebben in R: `glmnet`, `gbm`, `xgboost`, `rf` (= Random Forest) en `rpart`. 
+
+`glmnet`, `gbm`, `rpart` hebben de mogelijkheid om met de `weights` parameter te proberen de prevalentie-bias weg te werken.
+
+`rf` kent een expliciete parameter `classwt` voor de gewenste prevalentie. 
+
+`xgboost` kent twee manieren om de prevalentie-bias te mitigeren. In de eerste plaats kan ook hier een gewicht per observatie worden meegegeven. Dat gebeurt in de matrix structuur van de training data. Daarnaast is er de parameter `scale_pos_weight` die precies doet wat ik wil: de werkelijke verdeling van de Ja-klasse doorgeven. 
+
+Ik heb ervoor gekozen om xgboost te gebruiken omdat het het meest flexibele pakket is en ook veel sneller is dan de overige pakketten. En omdat ik dat altijd al gebruikte als eerste analyse-middel. 
+
+## 1.3 Data details
+
+```{r 1-data}
+load("./data/0002.Rdata")
+load("./data/important.Rdata") ## diminish to important features
+
+raw_df<-raw_df[, c("y", important)]
+
+# isolate 60/40 train data from all data, 
+p1=0.6; N= 13500; M= 55000
+# then rshape the other data to 1/99, 
+p2 = 0.17
+raw_df$id<- 1:nrow(raw_df)
+plus<- raw_df$id[raw_df$y == 1]
+minus<- raw_df$id[raw_df$y == 0]
+to_train<- c(plus[1:(N*p1)], minus[1:(N*(1-p1))])
+train_df<- raw_df[raw_df$id %in% to_train, ]
+all<- raw_df[! raw_df$id %in% to_train, ]
+a<- round(sum(all$y == 0)*p2)
+b<- all$id[all$y ==1][1:a]
+all_df<- rbind( all[ all$y ==0, ], 
+                all[all$id %in% b, ])
+all_df<- all_df[sample(nrow(all_df), M), ]
+train_df$id<- NULL
+all_df$id<- NULL
+
+# show sizes
+
+cat("\nTrain size:", nrow(train_df), 
+    "\nClass prevalence:", p1, "\n")
+cat("\nPopulatie size:", nrow(all_df), 
+    "\nClass prevalence:", p2, "\n")
+
+cat("\nAantal kenmerken", ncol(train_df)-1, "\n")
+
+```
+
+## 1.4 Modellen
+
+We maken vier modellen: één zonder correctie voor de scheve prevalentie en drie met. We voorspellen dan met behulp van het gemaakte model de fraude-precentage van de totale  "populatie".  Daarvan weten we de klassificatie al en die vergelijken we met de voorspellingen. Alle gevallen mèt correctie werken goed en de enige zonder correctie is slechter dan geen model. 
+
+Een noot over de xgboost parameters die we hier gebruiken: dat waren de parameters die in bovenstaande Kaggle competitie goed werkten. Voor de zekerheid hebben we ze gecontroleerd met `caret` -- die bevestigt dat. 
+
+### 1.4a. Xgboost zonder correctie
+
+De parameters zijn de volgende:
+
+```{r 2-param, echo= TRUE}
+params_a<- list(
+  "objective"= "binary:logistic"
+  , "booster"= "gbtree"
+  , "tree_method" = "hist" ## alles is hier even goed maar deze is de snelste.
+  , "eval_metric" = "aucpr" ## net iets beter dan auc
+  , "subsample" = 0.90
+  , "colsample_bytree" = 0.50
+  , "min_child_weight" = 1
+  , "max_depth" = 14
+  , "gamma" = 9
+  , "eta"= 0.02
+  , "nthread"= 12
+  
+)
+
+```
+
+
+```{r 3-model, warning= FALSE, messsage=FALSE}
+
+x<- xgb.DMatrix(as.matrix(train_df[, -1]), label=train_df$y)
+
+modela<- xgb.train(
+  params = params_a, 
+  data= x
+  , verbose = 1
+  , print_every_n = 250
+  , nrounds= 1500 
+  # , watchlist= list(x=x) ## silent without watchlist
+
+)
+a<- predict(modela, x)
+# diagnosis(train_df$y, a, "xgb on train")
+
+b<- xgb.DMatrix(as.matrix(all_df[, -1]))
+b<- predict(modela, b)
+
+caret::confusionMatrix(as.factor(all_df$y), as.factor(ifelse(b>0.5, 1, 0)), positive= "1")
+
+
+```
+
+### 1.4b. Xgboost met scale correctie
+
+De parameters zijn de volgende,
+
+```{r 4-params, echo= TRUE}
+params_b<- list(
+  "objective"= "binary:logistic"
+  , "booster"= "gbtree"
+  , "tree_method" = "hist"
+  , "eval_metric" = "aucpr" ## slightly better than 
+                            ## auc or map or ndcg(@n) 
+                            ## or logloss
+  , "subsample" = 0.90
+  , "colsample_bytree" = 0.5
+  , "min_child_weight" = 1
+  , "max_depth" = 14
+  , "gamma" = 9
+  , "eta"= 0.02
+  , "nthread"= 12
+  , "scale_pos_weight" = 0.15 ##p2 ## = 0.17
+
+)
+
+set.seed(12345)
+
+```
+
+
+```{r 5-model, warning= FALSE, messsage=FALSE}
+
+x<- xgb.DMatrix(as.matrix(train_df[, -1]), label=train_df$y)
+v<- xgb.DMatrix(as.matrix(all_df[, -1]), label=all_df$y)
+model_b<- xgb.train(
+  params = params_b, 
+  data= x
+  , verbose = 1
+  , print_every_n = 250
+  , nrounds= 6500 
+  # , watchlist= list(x=x, v=v) ## silent without watchlist
+
+)
+a<- predict(model_b, x)
+# diagnosis(train_df$y, a, "xgb on train")
+
+b<- xgb.DMatrix(as.matrix(all_df[, -1]))
+b<- predict(model_b, b)
+
+caret::confusionMatrix(as.factor(all_df$y), as.factor(ifelse(b>0.5, 1, 0)), positive= "1")
+
+```
+
+We analyseren nog even wat verder. Bedenk dat de algoritmes geen absolute scores geven, maar een waarschijnlijkheid. Hoe is dat verdeeld?
+
+Vier diagrammen voor de waarschijnlijkheids-scores bij de Confusion matrix.
+
+```{r 6-diagram}
+
+h<- data.frame(true= all_df$y, probs=b)
+h1<- h$probs[h$true==1 & h$probs > 0.5]
+h2<- h$probs[h$true==1 & h$probs < 0.5]
+h3<- h$probs[h$true==0 & h$probs > 0.5]
+h4<- h$probs[h$true==0 & h$probs < 0.5]
+
+op=par(mfrow=c(2,2))
+pretty_density(h4, main="True Negative", xlim=c(0,0.5))
+pretty_density(h3, main="False Positive", xlim=c(0.5, 1))
+pretty_density(h2, main="False Negative", xlim=c(0,0.5))
+pretty_density(h1, main="True Positive", xlim=c(0.5, 1))
+par(op)
+```
+
+De verticale lijnen geven links en rechts het 95% CI aan. De middelste lijn is het gemiddelde. 
+
+Dit is geen fraude data maar het gedrag van de "objecten" is wel typisch voor dit soort classificatie-analyses. De True Negatives en tRUE Positives scoren heel dicht bij 0, resp. 1 . De False Positives hebben een net iets te hoge score, maar zijn ver verwijderd van de True positives. En de False Negatives? Dat zijn diegenen met onvoorspelbaar gedrag die dus in geen enkel model wel te vangen zijn. 
+
+### 1.4c. Xgboost met aangepaste gewichten
+
+De parameters zijn de volgende:
+
+```{r 7-param,  echo= TRUE}
+params_c<- list(
+  "objective"= "binary:logistic"
+  , "booster"= "gbtree"
+  , "tree_method" = "hist"
+  , "eval_metric" = "aucpr" ## slightly better than 
+                            ## auc or map or ndcg(@n) or logloss
+  , "subsample" = 0.90
+  , "colsample_bytree" = 0.50
+  , "min_child_weight" = 1
+  , "max_depth" = 14
+  , "gamma" = 9
+  , "eta"= 0.02
+  , "nthread"= 12
+)
+
+set.seed(12345)
+
+```
+
+
+```{r 8-model, warning= FALSE, messsage=FALSE}
+weight<- ifelse(train_df$y==1, 0.283/1.18, 2.08/1.18)
+
+x<- xgb.DMatrix(as.matrix(train_df[, -1]), label=train_df$y, 
+                weight= weight)
+v<- xgb.DMatrix(as.matrix(all_df[, -1]), label=all_df$y)
+model<- xgb.train(
+  params = params_c, 
+  data= x
+  , verbose = 1
+  , print_every_n = 250
+  , nrounds= 6500 
+  # , watchlist= list(x=x, v=v) ## silent without watchlist
+
+)
+a<- predict(model, x)
+# diagnosis(train_df$y, a, "xgb on train")
+
+b<- xgb.DMatrix(as.matrix(all_df[, -1]))
+b<- predict(model, b)
+
+caret::confusionMatrix(as.factor(all_df$y), as.factor(ifelse(b>0.5, 1, 0)), positive= "1")
+
+```
+
+
+### 1.4d twee correcties tegelijkertijd
+
+Ik vroeg me af of die twee correcties tegelijk niet tot een over-correctie leidt. Dat valt mee. Juist het aantal fout-positieven daalt sterk en dat zou zeker voordelen kunne hebben.
+
+```{r 9-model}
+# data is stll weighted
+
+model<- xgb.train(
+  params = params_b, 
+  data= x
+  , verbose = 1
+  , print_every_n = 250
+  , nrounds= 6500 
+  # , watchlist= list(x=x, v=v) ## silent without watchlist
+
+)
+a<- predict(model, x)
+# diagnosis(train_df$y, a, "xgb on train")
+
+b<- xgb.DMatrix(as.matrix(all_df[, -1]))
+b<- predict(model, b)
+
+caret::confusionMatrix(as.factor(all_df$y), as.factor(ifelse(b>0.5, 1, 0)), positive= "1")
+
+
+```
+
+## 2. Conlusies.
+
+De simulatie in 1,4a laat zien dat het maken van een model zonder rekening te houden met de prevalentie-bias niet (goed) werkt. In dit geval is de accuraatheid zo slecht (0.8468), dat we net zo goed iedereen als niet-fraudeur kunnen bestempelen (0.8528 ). Immers:
+
+```{r 10-cm, warning=FALSE}
+caret::confusionMatrix(as.factor(ifelse(0*b>0.5, 1, 0)), as.factor(all_df$y), positive= "1")
+```
+
+Van de overige schattingen scoort 4b het beste que accuraatheid, maar ook voor 4d valt wat te zeggen als men probeert vooral het aantal fout-positieven te minimaliseren. 
+
+## 3. Management Samenvatting
+
+Deze simulatie toont zeer overtuigend aan dat een model dat gemaakt is met 60/40 prevalentie niet werkt wanneer de werkelijkheid maar hooguit 15% is. Het model dat er uit komt zal een zeer hoog percentage fout-positieven hebben, dat wil zeggen veel mensen aanwijzen als potentiële fraudeur die het niet zijn. 
+
+In de praktijk zijn zg. discriminerende kenmerken verwijderd uit het model, maar het is een groot misverstand dat zoiets zou helpen. Dan komen er nl. andere voor in de plaats en _de software blijft zoeken naar een model met 60/40 prevalentie__. 
+
+Voorts moet men zich realiseren dat deze algoritmen proberen beide klassen even goed te voorspellen.Een zg. discriminerend kenmerk zou dus heel goed kunnen dienen om juist de niet-fraudeurs te identificeren. Dat is als de algoritmes worden getrained met representatieve gegevens van beide klassenb, en in de juiste proporties. 
+
+====
+     
+Jan van Rongen, 2022-01-05
