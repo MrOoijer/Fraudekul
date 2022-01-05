@@ -5,4 +5,4 @@ De problemen met Fraude software In Rotterdam.
 
 
 Het document over de simulatie: 
-https://./simulatie-verslag.pdf
+https://raw.githubusercontent.com/mr0oijer/fraudekul/main/simulatieverslag,pdf
