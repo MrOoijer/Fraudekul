@@ -4,16 +4,16 @@ _**De problemen met de Rotterdamse Fraude software**_
 
 Leiderdorp, 6 Januari 2022
 
-Geachte geadresserden. Veel mensen in Nederland maken zich zorgen over het gebruik van AI algoritmes door de Nederlandse landelijke en lokale overheid. Er is een roep om een "waakhond" in deze, of een protocol om de buregers te beschermen. 
+Geachte geadresserden. Veel mensen in Nederland maken zich zorgen over het gebruik van AI algoritmes door de Nederlandse landelijke en lokale overheid. Er is een roep om een "waakhond" in deze, of een protocol om de burgers beter te beschermen. 
 
-Dit alles is te abstract gebleven, want niemand weet eigenlijk waar het precies om gaat en wat alle indrukwekkende maar lege woorden in de rapporten van Binnenlandse zaken nu eigenlijk betekenen. 
+Dit alles is te abstract gebleven, de termen zijn indrukwekkend maar of het iets betekent kan vrijwel niemand beoordel. In hoeverre hebben de rapporten van Binnenlandse Zaken enige relatie tot de werkelijke gang van zaken? Niemand die zo'n AI-systeem echt had kunnen bekijken. 
 
-Tot 18 december 2021, toen het VPRO-programma Argos de code publiceerde van het Rotterdamse Bijstandfraude-detectie systeem. Ik keek daar eens naar en zag dat het het soort software is dat ik de afgelopen 10 jaar heb gemaakt en bestudeerd. Voor verdere credentails verwijs ik naar bijlage 4.  
+Tot 18 december 2021, toen het VPRO-programma Argos de code publiceerde van het Rotterdamse Bijstandfraude-detectie systeem. Ik keek er naar en zag dat het het soort software is dat ik de afgelopen 10 jaar heb gemaakt en bestudeerd. Voor verdere credentails verwijs ik naar bijlage [4].  
 
 **A.** De software bevat een serieuze blunder die een ervaren data scientist nooit gemaakt zou hebben. Belangrijk is om te beseffen dat dit soort software "leert" van data uite het verleden (jargon: training data") om een prognose te maken van het heden en de toekomst. De training data moet een zo goed mogelijke afspiegeling zijn van de huidige gegevns, en dat is waar het fout gaat. Er wordt getrained op data met 60% fraudeaurs terwijl dat in werkelijkheid minder dan pakweg 10% is. 
 
 Daardoor "leert" de software niet genoeg over niet-faudeurs en worden er dus heel veel niet-fraudeurs aangewezen als potentiële fraudeurs.
-In een simulatie (bijlage 3) laat ik zien hoe groot de omvang van deze fout is. 
+In een simulatie (bijlage [3]) laat ik zien hoe groot de omvang van deze fout is. 
 
 **B.** Uit deze casus blijkt ook nogmaals dat het beoordelen van alleen de algoritmes volstrekt  onvoldoende zekerheid biedt, omdat de uiteindelijke modellen ook worden vormgegeven door de data. Een protocol is dus niet geneog, er moet een actieve audit-dienst komen. 
 
@@ -35,16 +35,21 @@ De bijlagen zijn:
 
 *2. Audit van de code van Accenture.*
 
-Directe download van de code-audit:bepaald door de gegevens die je er in stopt. 
-
+Directe download van de code-audit:
 https://github.com/MrOoijer/Fraudekul/raw/main/code-audit.pdf
 
 *3. Een simulatie die laat zien wat het probleem is van de ongebalanceerde training data.*
 
 Directe download van het simulatie-verslag: 
-
 https://github.com/MrOoijer/Fraudekul/raw/main/simulatie-verslag.pdf
 
-*4. CV van ondergetende (volgt).*
+*4. CV van ondergetende*
+
+zie cv.md
 
 Jan van Rongen 2022-01-06
+Grotiuslaan 17, 2353 BR  Leiderdorp
+
+06.53.396.903
+
+jan.van.rongen@xs4all.nl

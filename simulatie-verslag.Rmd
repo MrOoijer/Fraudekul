@@ -114,7 +114,7 @@ params_a<- list(
   , "max_depth" = 14
   , "gamma" = 9
   , "eta"= 0.02
-  , "nthread"= 12
+  , "nthread"= 15
   
 )
 
@@ -163,7 +163,7 @@ params_b<- list(
   , "max_depth" = 14
   , "gamma" = 9
   , "eta"= 0.02
-  , "nthread"= 12
+  , "nthread"= 15
   , "scale_pos_weight" = 0.15 ##p2 ## = 0.17
 
 )
@@ -237,7 +237,7 @@ params_c<- list(
   , "max_depth" = 14
   , "gamma" = 9
   , "eta"= 0.02
-  , "nthread"= 12
+  , "nthread"= 15
 )
 
 set.seed(12345)
@@ -315,6 +315,86 @@ Deze simulatie toont zeer overtuigend aan dat een model dat gemaakt is met 60/40
 In de praktijk zijn zg. discriminerende kenmerken verwijderd uit het model, maar het is een groot misverstand dat zoiets zou helpen. Dan komen er nl. andere voor in de plaats en _de software blijft zoeken naar een model met 60/40 prevalentie__. 
 
 Voorts moet men zich realiseren dat deze algoritmen proberen beide klassen even goed te voorspellen.Een zg. discriminerend kenmerk zou dus heel goed kunnen dienen om juist de niet-fraudeurs te identificeren. Dat is als de algoritmes worden getrained met representatieve gegevens van beide klassenb, en in de juiste proporties. 
+
+## Toegift. Wat het had moeten zijn. 
+
+Hier laat ik zien wat de juiste aanpak was geweest. 
+
+De train_data is 60.40, de populayie misschiem 17/83. Maak een "validation set" uit de train data met die juiste verhoudingen en zet die opzij. Dat heet de hold-out set of validation set. Met de rest gaan we verder als met de vroige train data.
+
+```{r}
+train_df$id<- 1: nrow(train_df) 
+val_df_plus<- train_df[train_df$y==1, ]
+val_df_plus<- val_df_plus[sample(nrow(val_df_plus), 255), ]
+
+val_df_neg<- train_df[train_df$y==0, ]
+val_df_neg<- val_df_neg[sample(nrow(val_df_neg), 1245), ]
+val_df<- rbind(val_df_plus, val_df_neg)
+
+sm_train_df<- train_df[setdiff(train_df$id, val_df$id), ]
+sm_train_df$id <- NULL
+val_df$id <- NULL
+
+```
+
+
+Maar nu vertellen we xgboost dat hij moet trainen met de genoemde data, maar zichzelf moet bijsturen met de validatie-set. Dus de kleinere train set loopt door het algoritme met de bekende verdeling van de validatie set als parameter (die hopelijk die van de populatie is). En dan stopt xgboost op oms verzoek als de doelfunctie zich niet meer verbetert. Werkt dat? Nou uitstekend, want we hebben nu een model gemaakt dateen keurige voorspelling blijkt te doen over de populatie. Laat ik het er op houden: zo had het ook in 2017 gemaakt moeten zijn, dat was toen al lang bekend en mogelijk. 
+
+
+```{r}
+
+params_b<- list(
+  "objective"= "binary:logistic"
+  , "booster"= "gbtree"
+  , "tree_method" = "approx"
+  , "eval_metric" = "auc" 
+  , 'subsample'= 0.75
+  , "colsample_bytree" = 0.5
+  , "min_child_weight" = 0
+  , "max_depth" = 16
+  , "gamma" = 9
+  , "eta"= 0.015
+  , "nthread"= 15
+  , "scale_pos_weight" = 0.17 ##p2 ## = 0.17
+
+)
+
+set.seed(12345)
+
+
+x<- xgb.DMatrix(as.matrix(sm_train_df[, -1]), label=sm_train_df$y)
+v<- xgb.DMatrix(as.matrix(val_df[, -1]), label=val_df$y)
+model_b2<- xgb.train(
+  params = params_b, 
+  data= x
+  , verbose = 1
+  , print_every_n = 500
+  , early_stopping= 750
+  , nrounds= 9500 
+  , watchlist= list(val_data=v) ## silent without watchlist
+
+)
+a<- predict(model_b2, x)
+# diagnosis(train_df$y, a, "xgb on train")
+
+b<- xgb.DMatrix(as.matrix(val_df[, -1]))
+b<- predict(model_b2, b)
+
+caret::confusionMatrix(as.factor(val_df$y), as.factor(ifelse(b>0.5, 1, 0)), positive= "1")
+
+```
+
+En op de hele populatie:
+
+```{r}
+
+b<- xgb.DMatrix(as.matrix(all_df[, -1]))
+b<- predict(model_b2, b)
+
+caret::confusionMatrix(as.factor(all_df$y), as.factor(ifelse(b>0.5, 1, 0)), positive= "1")
+
+
+```
 
 ====
      
